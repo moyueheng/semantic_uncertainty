@@ -72,26 +72,67 @@ def construct_few_shot_prompt(
 def calculate_p_true(
         model, question, most_probable_answer, brainstormed_answers,
         few_shot_prompt, hint=False):
-    """Calculate p_true uncertainty metric."""
+    """计算p_true不确定性度量。
+    
+    参数:
+        model: 语言模型对象
+        question: 输入问题
+        most_probable_answer: 最可能的答案(温度=0.1时生成的答案)
+        brainstormed_answers: 头脑风暴生成的其他答案列表(温度=1.0时生成的答案)
+        few_shot_prompt: few-shot提示示例
+        hint: 是否使用提示模式
+    
+    返回:
+        log_prob: 模型认为答案正确的对数概率
+    """
 
+    # 如果有few-shot提示,添加到prompt开头
     if few_shot_prompt:
         prompt = few_shot_prompt + '\n'
     else:
         prompt = ''
 
+    # 构建提示文本
     prompt += 'Question: ' + question
     prompt += '\nBrainstormed Answers: '
+    # 添加所有生成的答案,包括最可能答案
     for answer in brainstormed_answers + [most_probable_answer]:
         prompt += answer.strip() + '\n'
     prompt += 'Possible answer: ' + most_probable_answer + '\n'
+
     if not hint:
+        # 标准模式:让模型判断答案是否正确
         prompt += 'Is the possible answer:\n'
         prompt += 'A) True\n'
         prompt += 'B) False\n'
         prompt += 'The possible answer is:'
     else:
+        # 提示模式:让模型判断答案是否与头脑风暴答案一致
         prompt += 'Do the brainstormed answers match the possible answer? Respond with A if they do, if they do not respond with B. Answer:'
 
+    # 获取模型对答案正确性的判断概率
     log_prob = model.get_p_true(prompt)
+    # prompt示例如下
+    """
+    Question: 什么是深度学习？
+    Brainstormed Answers: 深度学习是机器学习的一个子领域，使用多层神经网络进行学习。
+    深度学习是一种基于人工神经网络的机器学习方法。
+    Possible answer: 深度学习是机器学习的一个子领域，使用多层神经网络进行学习。
+    Is the possible answer:
+    A) True
+    B) False
+    The possible answer is: A
+
+    Question: 什么是机器学习？
+    Brainstormed Answers: 机器学习是计算机科学的一个领域，专注于开发能够从数据中学习的算法。
+    机器学习是让计算机不需要明确编程就能学习的研究。
+    机器学习是人工智能的一个分支，它使用数据和算法来模仿人类学习的方式，逐渐提高其准确性。
+    Possible answer: 机器学习是人工智能的一个分支，它使用数据和算法来模仿人类学习的方式，逐渐提高其准确性。
+    Is the possible answer:
+    A) True
+    B) False
+    The possible answer is:
+    
+    """
 
     return log_prob

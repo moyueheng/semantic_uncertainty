@@ -117,7 +117,7 @@ def main(args):
     # 初始化模型
     model = utils.init_model(args)
 
-    # 初始化p_true基线的提示
+    # 初始化p_true基线的提示： p_true 是指模型对其生成答案正确性的自我评估概率。
     if args.compute_p_true:
         logging.info(80 * "#")
         logging.info("构建p_true的few-shot提示")

@@ -177,23 +177,37 @@ def construct_fewshot_prompt_from_indices(dataset, example_indices, brief, brief
 
 
 def split_dataset(dataset):
-    """Get indices of answerable and unanswerable questions."""
+    """获取可回答和不可回答问题的索引。有些数据集是只有问题，没有答案的。
+    
+    将数据集中的问题分为两类:
+    1. 可回答问题 - 有答案的问题
+    2. 不可回答问题 - 没有答案的问题
+    
+    Args:
+        dataset: 包含问题和答案的数据集
+        
+    Returns:
+        answerable_indices: 可回答问题的索引列表
+        unanswerable_indices: 不可回答问题的索引列表
+    """
 
     def clen(ex):
+        # 获取问题的答案数量
         return len(ex["answers"]["text"])
 
+    # 获取有答案的问题索引
     answerable_indices = [i for i, ex in enumerate(dataset) if clen(ex) > 0]
+    # 获取没有答案的问题索引 
     unanswerable_indices = [i for i, ex in enumerate(dataset) if clen(ex) == 0]
 
-    # union == full dataset
+    # 验证两个集合的并集等于完整数据集
     assert set(answerable_indices) | set(
         unanswerable_indices) == set(range(len(dataset)))
-    # no overlap
+    # 验证两个集合没有重叠
     assert set(answerable_indices) - \
         set(unanswerable_indices) == set(answerable_indices)
 
     return answerable_indices, unanswerable_indices
-
 
 def model_based_metric(predicted_answer, example, model):
     if 'answers' in example:

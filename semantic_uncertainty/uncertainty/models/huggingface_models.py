@@ -357,20 +357,39 @@ class HuggingfaceModel(BaseModel):
         return sliced_answer, log_likelihoods, last_token_embedding
 
     def get_p_true(self, input_data):
-        """Get the probability of the model anwering A (True) for the given input."""
-
+        """获取模型对输入回答为True(A)的概率。
+        
+        该方法通过计算模型生成"A"(True)的负对数似然来评估模型认为答案正确的概率。
+        计算方法参考: https://huggingface.co/docs/transformers/perplexity
+        
+        参数:
+            input_data: 输入提示文本,通常包含问题和可能的答案
+            
+        返回:
+            float: 负的损失值,表示模型认为答案正确的对数概率
+        """
+        # 在输入末尾添加" A"作为目标标记
         input_data += ' A'
+        
+        # 将输入文本转换为模型可处理的token ids,并移至GPU
         tokenized_prompt_true = self.tokenizer(input_data, return_tensors='pt').to('cuda')['input_ids']
-        # The computation of the negative log likelihoods follows:
-        # https://huggingface.co/docs/transformers/perplexity.
-
+        
+        # 复制token ids作为目标标签
         target_ids_true = tokenized_prompt_true.clone()
-        # Set all target_ids except the last one to -100.
+        
+        # 将除最后一个token外的所有标签设为-100
+        # -100表示这些位置在计算损失时会被忽略
+        # 只计算最后一个token(即"A")的损失
         target_ids_true[0, :-1] = -100
 
+        # 关闭梯度计算,因为只需要前向传播
         with torch.no_grad():
+            # 获取模型输出,包含损失值
             model_output_true = self.model(tokenized_prompt_true, labels=target_ids_true)
 
+        # 提取损失值
         loss_true = model_output_true.loss
 
+        # 返回负的损失值作为对数概率
+        # 损失值越小表示模型越倾向于生成"A"
         return -loss_true.item()

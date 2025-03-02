@@ -1,4 +1,11 @@
-"""Compute uncertainty measures after generating answers."""
+"""计算语言模型生成答案的不确定性度量。
+
+本模块在生成答案后计算各种不确定性度量，包括：
+1. 语义熵（Semantic Entropy）
+2. 预测熵（Predictive Entropy）
+3. 聚类分配熵（Cluster Assignment Entropy）
+4. p_true和p_ik等其他不确定性度量
+"""
 from collections import defaultdict
 import logging
 import os
@@ -30,17 +37,30 @@ EXP_DETAILS = 'experiment_details.pkl'
 
 
 def main(args):
-
+    """主函数，计算不确定性度量。
+    
+    Args:
+        args: 包含运行配置的参数对象，主要包括：
+            - train_wandb_runid: 训练运行的wandb ID
+            - eval_wandb_runid: 评估运行的wandb ID
+            - compute_predictive_entropy: 是否计算预测熵
+            - compute_p_ik: 是否计算p_ik
+            - compute_p_true: 是否计算p_true
+    """
+    # 如果没有指定训练运行ID，使用评估运行ID
     if args.train_wandb_runid is None:
         args.train_wandb_runid = args.eval_wandb_runid
 
+    # 设置wandb运行环境
     user = os.environ['USER']
     scratch_dir = os.getenv('SCRATCH_DIR', '.')
     wandb_dir = f'{scratch_dir}/{user}/uncertainty'
     slurm_jobid = os.getenv('SLURM_JOB_ID', None)
     project = "semantic_uncertainty" if not args.debug else "semantic_uncertainty_debug"
+    
+    # 是否创建新的wandb运行
     if args.assign_new_wandb_id:
-        logging.info('Assign new wandb_id.')
+        logging.info('分配新的wandb_id')
         api = wandb.Api()
         old_run = api.run(f'{args.restore_entity_eval}/{project}/{args.eval_wandb_runid}')
         wandb.init(
@@ -48,14 +68,12 @@ def main(args):
             project=project,
             dir=wandb_dir,
             notes=f'slurm_id: {slurm_jobid}, experiment_lot: {args.experiment_lot}',
-            # For convenience, keep any 'generate_answers' configs from old run,
-            # but overwrite the rest!
-            # NOTE: This means any special configs affecting this script must be
-            # called again when calling this script!
+            # 保留generate_answers的配置，但覆盖其他配置
             config={**old_run.config, **args.__dict__},
         )
 
         def restore(filename):
+            """从wandb恢复文件。"""
             old_run.file(filename).download(
                 replace=True, exist_ok=False, root=wandb.run.dir)
 
@@ -64,19 +82,21 @@ def main(args):
 
             return Restored
     else:
-        logging.info('Reuse active wandb id.')
+        logging.info('重用当前wandb id')
 
         def restore(filename):
+            """直接使用当前目录的文件。"""
             class Restored:
                 name = f'{wandb.run.dir}/{filename}'
             return Restored
 
+    # 检查是否使用不同的训练和评估数据集
     if args.train_wandb_runid != args.eval_wandb_runid:
         logging.info(
-            "Distribution shift for p_ik. Training on embeddings from run %s but evaluating on run %s",
+            "p_ik的分布偏移。在运行%s的嵌入上训练，但在运行%s上评估",
             args.train_wandb_runid, args.eval_wandb_runid)
 
-        is_ood_eval = True  # pylint: disable=invalid-name
+        is_ood_eval = True  # 分布外评估
         api = wandb.Api()
         old_run_train = api.run(f'{args.restore_entity_train}/semantic_uncertainty/{args.train_wandb_runid}')
         filename = 'train_generations.pkl'
@@ -87,7 +107,7 @@ def main(args):
         wandb.config.update(
             {"ood_training_set": old_run_train.config['dataset']}, allow_val_change=True)
     else:
-        is_ood_eval = False  # pylint: disable=invalid-name
+        is_ood_eval = False  # 分布内评估
         if args.compute_p_ik or args.compute_p_ik_answerable:
             train_generations_pickle = restore('train_generations.pkl')
             with open(train_generations_pickle.name, 'rb') as infile:
@@ -95,9 +115,9 @@ def main(args):
 
     wandb.config.update({"is_ood_eval": is_ood_eval}, allow_val_change=True)
 
-    # Load entailment model.
+    # 加载蕴含判断模型
     if args.compute_predictive_entropy:
-        logging.info('Beginning loading for entailment model.')
+        logging.info('开始加载蕴含判断模型')
         if args.entailment_model == 'deberta':
             entailment_model = EntailmentDeberta()
         elif args.entailment_model == 'gpt-4':

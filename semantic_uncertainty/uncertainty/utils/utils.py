@@ -17,9 +17,45 @@ BRIEF_PROMPTS = {
 
 
 def get_parser(stages=['generate', 'compute']):
+    """构建命令行参数解析器。
+
+    Args:
+        stages (list): 指定需要解析的参数阶段,可选值为['generate', 'compute']。
+                      'generate'阶段用于生成答案,
+                      'compute'阶段用于计算不确定性度量。
+
+    Returns:
+        argparse.ArgumentParser: 配置好的参数解析器
+
+    主要参数说明:
+    通用参数:
+        - debug: 是否开启调试模式
+        - entity: wandb实体名称
+        - random_seed: 随机种子
+        - metric: 用于评估生成答案准确性的指标
+        - experiment_lot: 实验批次名称
+
+    generate阶段参数:
+        - model_name: 使用的模型名称
+        - dataset: 使用的数据集
+        - num_samples: 采样数量
+        - num_few_shot: few-shot示例数量
+        - temperature: 采样温度
+        等
+
+    compute阶段参数:
+        - eval_wandb_runid: 用于评估的wandb运行ID
+        - compute_p_ik: 是否计算p_ik不确定性度量
+        - compute_predictive_entropy: 是否计算预测熵
+        等
+    """
+    # 从环境变量获取wandb实体名称
     entity = os.getenv('WANDB_SEM_UNC_ENTITY', None)
 
+    # 创建参数解析器
     parser = argparse.ArgumentParser()
+
+    # 添加通用参数
     parser.add_argument(
         "--debug", action=argparse.BooleanOptionalAction, default=False,
         help="Keep default wandb clean.")
@@ -36,6 +72,8 @@ def get_parser(stages=['generate', 'compute']):
     parser.add_argument(
         "--experiment_lot", type=str, default='Unnamed Experiment',
         help="Keep default wandb clean.")
+
+    # 添加生成阶段参数
     if 'generate' in stages:
         parser.add_argument(
             "--model_name", type=str, default="Llama-2-7b-chat", help="Model name",
@@ -107,6 +145,7 @@ def get_parser(stages=['generate', 'compute']):
             action=argparse.BooleanOptionalAction,
             help='Exclude unanswerable questions.')
 
+    # 添加计算阶段参数
     if 'compute' in stages:
         parser.add_argument('--recompute_accuracy',
                             default=False, action=argparse.BooleanOptionalAction)
@@ -146,7 +185,6 @@ def get_parser(stages=['generate', 'compute']):
                             default=False, action=argparse.BooleanOptionalAction,
                             help='Use entailment model as p_true model.')
     return parser
-
 
 def setup_logger():
     """Setup logger to always print time and level."""

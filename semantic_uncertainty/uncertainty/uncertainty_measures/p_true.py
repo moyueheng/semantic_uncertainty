@@ -5,49 +5,81 @@ import logging
 def construct_few_shot_prompt(
         *, model, dataset, indices, prompt, brief, brief_always, make_prompt,
         num_generations, metric):
-    """Construct few shot prompt for p_true uncertainty metric."""
+    """构建p_true不确定性度量的few-shot提示。
 
-    # Call model n_shots many times.
+    参数:
+        model: 语言模型对象
+        dataset: 数据集
+        indices: 用于构建few-shot示例的数据索引列表
+        prompt: 基础提示模板
+        brief: 简短提示模板
+        brief_always: 是否始终使用简短提示
+        make_prompt: 构建提示的函数
+        num_generations: 每个问题生成的答案数量
+        metric: 评估答案正确性的指标函数
+
+    返回:
+        few_shot_prompt: 构建的few-shot提示字符串
+        all_responses: 包含每个示例生成答案的字典
+        it: 实际使用的few-shot示例数量
+    """
+
+    # 存储few-shot提示和所有生成的答案
     few_shot_prompt = []
     all_responses = dict()
+
+    # 遍历每个示例构建few-shot提示
     for it, i in enumerate(indices):
-        prompt_candidate = []
+        prompt_candidate = []  # 当前示例的提示内容
         example = dataset[i]
         question = example["question"]
         context = example["context"]
+
+        # 添加换行分隔不同示例
         if it != 0:
             prompt_candidate += ['\n']
+
+        # 添加问题和答案部分的提示
         prompt_candidate += ['Question: ' + question]
         prompt_candidate += ['\nBrainstormed Answers: ']
+
+        # 使用make_prompt构建完整的提示
         current_question = make_prompt(context, question, None, brief, brief_always)
         local_prompt = prompt + current_question
         logging.info('P_TRUE >> Current Question: '.ljust(25) + current_question)
 
+        # 存储当前问题的所有生成答案
         responses = []
+        
+        # 生成num_generations+1个答案,第一个使用低温度
         for j in range(num_generations + 1):
+            # 第一次生成使用低温度(0.1)获得最可能的答案
+            # 之后使用高温度(1.0)获得更多样的答案
+            temperature = 0.1 if j == 0 else 1.0
 
-            if j == 0:
-                temperature = 0.1
-            else:
-                temperature = 1.0
-
+            # 使用模型生成答案
             response, _, _ = model.predict(local_prompt, temperature)
             logging.info('P_TRUE >> Current Response: '.ljust(25) + response)
 
+            # 保存生成的答案
             responses.append(response)
             prompt_candidate += [f'{response.strip()} \n']
+
+            # 对第一个(最可能的)答案进行正确性评估
             if j == 0:
-                # Save most likely response and compute correctness metric for it.
                 most_likely_response = response
                 is_correct = metric(response, example, model)
                 answers = [answer for answer in example['answers']['text']]
                 logging.info('P_TRUE >> LOW-T >> true answer: '.ljust(35) + str(answers))
                 logging.info('P_TRUE >> LOW-T >> acc: '.ljust(35) + str(is_correct))
 
+        # 保存当前示例的所有信息
         all_responses[i] = dict(
-            responses=responses, most_likely_response=most_likely_response,
+            responses=responses, 
+            most_likely_response=most_likely_response,
             is_correct=is_correct)
 
+        # 构建提示的后半部分,包含答案判断
         prompt_candidate += ['Possible answer: ' + most_likely_response + '\n']
         prompt_candidate += ['Is the possible answer:\n']
         prompt_candidate += ['A) True\n']
@@ -55,19 +87,21 @@ def construct_few_shot_prompt(
         prompt_candidate += ['The possible answer is:']
         prompt_candidate += [' A' if is_correct else ' B']
 
+        # 计算当前提示的token长度
         prompt_len = len(model.tokenizer.encode(''.join(few_shot_prompt + prompt_candidate)))
-        # At test time, get a maximum of `num_generations * model.token_limit` extra tokens
-        # 200 buffer for question and 'Possible Answer'.
+        # 计算最大允许的输入长度:当前长度 + 生成时的最大token数 + 200个token的缓冲
         max_input_len = prompt_len + num_generations * model.max_new_tokens + 200
 
+        # 如果总长度在模型限制内,添加当前示例
+        # 否则停止添加新的示例
         if max_input_len < model.token_limit:
             few_shot_prompt.extend(prompt_candidate)
         else:
             logging.warning('Cutting of p_true prompt at length %d.', it)
             break
 
+    # 返回构建的few-shot提示字符串、所有生成的答案和使用的示例数
     return ''.join(few_shot_prompt), all_responses, it
-
 
 def calculate_p_true(
         model, question, most_probable_answer, brainstormed_answers,

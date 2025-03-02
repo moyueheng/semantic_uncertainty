@@ -123,8 +123,8 @@ def main(args):
         logging.info("构建p_true的few-shot提示")
 
         # 为p_true选择新的few-shot示例
-        p_true_indices = random.sample(answerable_indices, args.p_true_num_fewshot)
-        remaining_answerable = list(set(remaining_answerable) - set(p_true_indices))
+        p_true_indices = random.sample(answerable_indices, args.p_true_num_fewshot) # 选择一些可回答的问题作为few-shot示例
+        remaining_answerable = list(set(remaining_answerable) - set(p_true_indices)) # 从剩余的可回答问题中移除这些示例
         p_true_few_shot_prompt, p_true_responses, len_p_true = (
             p_true_utils.construct_few_shot_prompt(
                 model=model,
